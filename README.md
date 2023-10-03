@@ -1,3 +1,7 @@
+# Deprecation Notice
+
+This project has been moved to https://github.com/ajilach/clamav-rest. Please follow that one instead as this one here will get deleted soon.
+
 # Table of Contents
 
 - [Introduction](#introduction)
