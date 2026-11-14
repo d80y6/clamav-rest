@@ -37,7 +37,7 @@ WORKDIR /go/src/clamav-rest
 
 # Initialize module and fetch dependencies cleanly using modern Go syntax
 RUN go mod init clamav-rest || true
-RUN go get github.com/lyimmi/go-clamd
+RUN go get github.com/dutchcoders/go-clamd
 RUN go get github.com/prometheus/client_golang/prometheus/promhttp
 RUN go mod vendor
 RUN go build -v -o clamav-rest .
