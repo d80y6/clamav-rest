@@ -28,6 +28,13 @@ RUN sed -i 's/^#Foreground .*$/Foreground true/g' /etc/clamav/clamd.conf \
     && sed -i 's/^#TCPSocket .*$/TCPSocket 3310/g' /etc/clamav/clamd.conf \
     && sed -i 's/^#Foreground .*$/Foreground true/g' /etc/clamav/freshclam.conf
 
+# Optimize ClamAV configuration for low memory environments (< 500MB)
+RUN echo "ConcurrentDatabaseReload no" >> /etc/clamav/clamd.conf \
+    && echo "MaxThreads 1" >> /etc/clamav/clamd.conf \
+    && echo "MaxQueue 2" >> /etc/clamav/clamd.conf \
+    && echo "ExitOnOOM yes" >> /etc/clamav/clamd.conf \
+    && echo "TestDatabases no" >> /etc/clamav/freshclam.conf
+
 # Optional: run freshclam during build (can be skipped or allowed to fail gracefully if network blocks it)
 RUN freshclam --quiet --no-dns || true
 
