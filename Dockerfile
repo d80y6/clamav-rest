@@ -1,49 +1,53 @@
-FROM clamav/clamav
+FROM clamav/clamav:latest
 
-# Update
-RUN apk update upgrade;
+# Switch to root to install packages and build
+USER root
 
-# Install git
-RUN apk add git
+# Update and install build dependencies, git, tzdata, and Go
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    tzdata \
+    make \
+    musl-dev \
+    golang-go \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set timezone to Europe/Zurich
-RUN apk add tzdata
-RUN ln -s /usr/share/zoneinfo/Europe/Zurich /etc/localtime
+RUN ln -sf /usr/share/zoneinfo/Europe/Zurich /etc/localtime
 
-RUN apk add --no-cache git make musl-dev go
-
-# Configure Go
-ENV GOROOT /usr/lib/go
-ENV GOPATH /go
-ENV PATH /go/bin:$PATH
+# Configure Go environment
+ENV GOROOT=/usr/lib/go
+ENV GOPATH=/go
+ENV PATH=/go/bin:$PATH
 
 RUN mkdir -p ${GOPATH}/src ${GOPATH}/bin
 
-WORKDIR $GOPATH
-
-CMD ["make"]
-
-# Install ClamAV
-RUN apk --no-cache add clamav clamav-libunrar \
-    && mkdir /run/clamav \
-    && chown clamav:clamav /run/clamav
-
-# Configure clamAV to run in foreground with port 3310
+# Configure ClamAV daemon
 RUN sed -i 's/^#Foreground .*$/Foreground true/g' /etc/clamav/clamd.conf \
     && sed -i 's/^#TCPSocket .*$/TCPSocket 3310/g' /etc/clamav/clamd.conf \
-    && sed -i 's/^#Foreground .*$/Foreground true/g' /etc/clamav/freshclam.conf
+    && sed -i 's/^#Foreground .*$/Foreground true/g' /etc/clamav/freshclam.conf \
+    && mkdir -p /run/clamav \
+    && chown clamav:clamav /run/clamav
 
-RUN freshclam --quiet --no-dns
+# Download initial virus definitions (optional: can be skipped to avoid build timeouts)
+# RUN freshclam --quiet --no-dns || true
 
 # Build go package
+WORKDIR /go/src/clamav-rest
 ADD . /go/src/clamav-rest/
-RUN go get github.com/lyimmi/go-clamd
-RUN go get github.com/prometheus/client_golang/prometheus/promhttp
-ADD ./server.* /etc/ssl/clamav-rest/
-RUN cd /go/src/clamav-rest && go mod init && go mod vendor && go build -v
+
+RUN go mod init clamav-rest || true
+RUN go mod tidy
+RUN go build -v -o clamav-rest .
+
+# Copy assets and entrypoint
+RUN mkdir -p /etc/ssl/clamav-rest/
+RUN cp ./server.* /etc/ssl/clamav-rest/ 2>/dev/null || true
 
 COPY entrypoint.sh /usr/bin/
-RUN mv /go/src/clamav-rest/clamav-rest /usr/bin/ && rm -Rf /go/src/clamav-rest
+RUN chmod +x /usr/bin/entrypoint.sh \
+    && mv /go/src/clamav-rest/clamav-rest /usr/bin/ \
+    && rm -Rf /go/src/clamav-rest
 
 EXPOSE 9000
 EXPOSE 9443
