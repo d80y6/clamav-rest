@@ -1,16 +1,10 @@
-FROM clamav/clamav:latest
+FROM clamav/clamav
 
-# Switch to root to install packages and build
-USER root
+# Update packages safely
+RUN apk update && apk upgrade
 
-# Update and install build dependencies, git, tzdata, and Go
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    tzdata \
-    make \
-    musl-dev \
-    golang-go \
-    && rm -rf /var/lib/apt/lists/*
+# Install git and tzdata
+RUN apk add --no-cache git tzdata make musl-dev go
 
 # Set timezone to Europe/Zurich
 RUN ln -sf /usr/share/zoneinfo/Europe/Zurich /etc/localtime
@@ -22,27 +16,35 @@ ENV PATH=/go/bin:$PATH
 
 RUN mkdir -p ${GOPATH}/src ${GOPATH}/bin
 
-# Configure ClamAV daemon
-RUN sed -i 's/^#Foreground .*$/Foreground true/g' /etc/clamav/clamd.conf \
-    && sed -i 's/^#TCPSocket .*$/TCPSocket 3310/g' /etc/clamav/clamd.conf \
-    && sed -i 's/^#Foreground .*$/Foreground true/g' /etc/clamav/freshclam.conf \
+WORKDIR $GOPATH
+
+# Install ClamAV utilities if not already present in the base image
+RUN apk --no-cache add clamav clamav-libunrar \
     && mkdir -p /run/clamav \
     && chown clamav:clamav /run/clamav
 
-# Download initial virus definitions (optional: can be skipped to avoid build timeouts)
-# RUN freshclam --quiet --no-dns || true
+# Configure ClamAV to run in foreground with port 3310
+RUN sed -i 's/^#Foreground .*$/Foreground true/g' /etc/clamav/clamd.conf \
+    && sed -i 's/^#TCPSocket .*$/TCPSocket 3310/g' /etc/clamav/clamd.conf \
+    && sed -i 's/^#Foreground .*$/Foreground true/g' /etc/clamav/freshclam.conf
+
+# Optional: run freshclam during build (can be skipped or allowed to fail gracefully if network blocks it)
+RUN freshclam --quiet --no-dns || true
 
 # Build go package
-WORKDIR /go/src/clamav-rest
 ADD . /go/src/clamav-rest/
+WORKDIR /go/src/clamav-rest
 
+# Initialize module and fetch dependencies cleanly using modern Go syntax
 RUN go mod init clamav-rest || true
-RUN go mod tidy
+RUN go get github.com/lyimmi/go-clamd
+RUN go get github.com/prometheus/client_golang/prometheus/promhttp
+RUN go mod vendor
 RUN go build -v -o clamav-rest .
 
-# Copy assets and entrypoint
+# Copy SSL certificates and entrypoint
 RUN mkdir -p /etc/ssl/clamav-rest/
-RUN cp ./server.* /etc/ssl/clamav-rest/ 2>/dev/null || true
+ADD ./server.* /etc/ssl/clamav-rest/
 
 COPY entrypoint.sh /usr/bin/
 RUN chmod +x /usr/bin/entrypoint.sh \
