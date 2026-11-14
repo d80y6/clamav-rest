@@ -1,4 +1,4 @@
-FROM mailu/clamav:latest
+FROM clamav/clamav
 
 # Update
 RUN apk update upgrade;
